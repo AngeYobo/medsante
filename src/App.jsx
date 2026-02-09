@@ -69,6 +69,110 @@ const defaultEmployees = [
   { id: 8, nom: "Fournier", prenom: "Camille", matricule: "EMP008", dateNaissance: "1997-02-28", poste: "Laborantin", service: "R&D", dateEmbauche: "2023-09-01", risques: ["Produits chimiques", "Agents biologiques"], aptitude: "apte", derniereVisite: "2025-09-01", prochaineVisite: "2026-03-01", vaccinations: ["Tétanos (2023)", "Hépatite B (2023)", "Grippe (2025)"], notes: "" },
 ];
 
+const buildDMST = () => ({
+  // === Page 1 : DOSSIER MÉDICAL ===
+  identite: {
+    sexe: "",                // si tu veux le déplacer depuis employee
+    nationalite: "",
+    situationFamille: "",
+    lieuNaissance: "",
+    distanceDomicileKm: "",
+    moyensTransport: "",
+    adressesSuccessives: [{ adresse: "", dateDebut: "", dateFin: "" }],
+  },
+
+  entreprise: {
+    raisonSociale: "",
+    adresse: "",
+    embaucheLe: "",
+  },
+
+  antecedents: {
+    familiauxAscendantsCollateraux: "",
+    familiauxConjointEnfants: "",
+    personnels: "", // texte long
+  },
+
+  parcours: {
+    formationScolairePro: "",
+    activitesProAnterieures: "",
+    serviceMilitaire: {
+      arme: "", grade: "", lieu: "", outreMer: "",
+      exemptionReforme: "", motif: "", pension: "",
+    },
+    emploiObligatoire: {
+      victimeGuerre: false,
+      accidenteTravail: false,
+      travailleurHandicape: false,
+    },
+  },
+
+  immunoBio: {
+    vaccinations: [
+      // type: "diphtérie-tétanos" etc.
+      { type: "diphtérie-tétanos", date: "", commentaire: "" },
+      { type: "poliomyélite", date: "", commentaire: "" },
+      { type: "BCG", date: "", commentaire: "" },
+      { type: "autres", date: "", commentaire: "" },
+      { type: "test tuberculinique", date: "", commentaire: "" },
+    ],
+    serumsTransfusions: [{ type: "sérum", date: "", commentaire: "" }],
+    groupeSanguin: { laboratoire: "", date: "", resultat: "" },
+  },
+
+  // === Page 2 : 1er EXAMEN ===
+  premierExamen: buildExam(),
+
+  // === Page 3 : EXAMENS ULTÉRIEURS ===
+  examensUlterieurs: [], // liste de buildExam()
+});
+
+const buildExam = () => ({
+  meta: { date: "", docteur: "", cachetService: "" },
+
+  poste: {
+    intitule: "",
+    caracteristiques: "",
+    risques: [], // tu peux réutiliser RISQUES
+  },
+
+  facteursExtraPro: "",
+
+  constantes: { poidsKg: "", tailleCm: "" },
+
+  auditif: { prothese: false, auditionOD: "", auditionOG: "" },
+
+  oculaire: {
+    couleurs: "",
+    visionPresOD: "", visionPresOG: "",
+    visionLoinOD: "", visionLoinOG: "",
+    correction: { avec: true }, // simple flag
+  },
+
+  clinique: {
+    teguments: "",
+    appareilMoteur: "",
+    respiratoire: { rhinoPharynx: "", capaciteVitale: "" },
+    cardioVasculaire: { pouls: "", ta: "", varices: "" },
+    digestif: { parois: "", regime: "" },
+    genital: { regles: "" },
+    urinaire: { albumine: "", sucre: "" },
+    hemato: { ganglions: "", rate: "" },
+    endocrines: "",
+    nerveux: { tremblement: "", equilibre: "", reflexes: "" },
+    psychisme: "",
+    autres: "",
+  },
+
+  examensComplementaires: "",
+
+  // IMPORTANT : séparer médical vs employeur
+  conclusions: {
+    medicale: "",              // 🔒 médecin uniquement
+    professionnelleEmployeur: "" // avis à transmettre
+  },
+});
+
 const defaultVisits = [
   { id: 1, employeeId: 1, type: "periodique", date: "2025-01-15", heure: "09:00", medecin: "Dr. Laurent Moreau", statut: "realisee", conclusion: "RAS - Apte sans restriction", aptitude: "apte" },
   { id: 2, employeeId: 2, type: "periodique", date: "2025-06-10", heure: "10:30", medecin: "Dr. Laurent Moreau", statut: "realisee", conclusion: "RAS", aptitude: "apte" },
@@ -603,6 +707,395 @@ function Toast({ message, type, onClose }) {
   return <div className={`toast toast-${type}`}>{type === "success" ? "✓" : "✕"} {message}</div>;
 }
 
+function Field({ label, children, hint }) {
+  return (
+    <div className="form-group">
+      <label>{label}</label>
+      {children}
+      {hint && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 4 }}>{hint}</div>}
+    </div>
+  );
+}
+
+function Text({ value, onChange, placeholder }) {
+  return <input className="form-control" value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
+}
+
+function DateInput({ value, onChange }) {
+  return <input type="date" className="form-control" value={value || ""} onChange={e => onChange(e.target.value)} />;
+}
+
+function TextArea({ value, onChange, placeholder }) {
+  return <textarea className="form-control" value={value || ""} onChange={e => onChange(e.target.value)} placeholder={placeholder} />;
+}
+
+function Switch({ checked, onChange, label }) {
+  return (
+    <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer", fontSize: 13, color: "var(--text-secondary)" }}>
+      <input type="checkbox" checked={!!checked} onChange={e => onChange(e.target.checked)} />
+      {label}
+    </label>
+  );
+}
+
+function DMSTPage({ emp, onUpdate, user, showToast }) {
+  const canEditMedical = user.role === "medecin";
+  const canEditAdmin = user.role !== "infirmiere"; // secrétaire + médecin
+
+  const dmst = emp.dmst || buildDMST();
+  const setDMST = (next) => onUpdate({ dmst: next });
+
+  const setPath = (path, value) => {
+    const clone = structuredClone(dmst);
+    let cur = clone;
+    for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+    cur[path[path.length - 1]] = value;
+    setDMST(clone);
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div className="card">
+        <div className="card-header">
+          <h3>Dossier médical (ouverture)</h3>
+          <button className="btn btn-secondary" onClick={() => { setDMST(dmst); showToast("Dossier sauvegardé", "success"); }}>
+            💾 Sauvegarder
+          </button>
+        </div>
+        <div className="card-body">
+          <div className="form-grid">
+            <div className="form-group">
+              <label>Nationalité</label>
+              <input className="form-control" value={dmst.identite.nationalite || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["identite", "nationalite"], e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Situation de famille</label>
+              <input className="form-control" value={dmst.identite.situationFamille || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["identite", "situationFamille"], e.target.value)} />
+            </div>
+
+            <div className="form-group">
+              <label>Distance domicile (km)</label>
+              <input className="form-control" value={dmst.identite.distanceDomicileKm || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["identite", "distanceDomicileKm"], e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Moyens de transport</label>
+              <input className="form-control" value={dmst.identite.moyensTransport || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["identite", "moyensTransport"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Entreprise — Raison sociale</label>
+              <input className="form-control" value={dmst.entreprise.raisonSociale || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["entreprise", "raisonSociale"], e.target.value)} />
+            </div>
+            <div className="form-group full">
+              <label>Entreprise — Adresse</label>
+              <input className="form-control" value={dmst.entreprise.adresse || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["entreprise", "adresse"], e.target.value)} />
+            </div>
+            <div className="form-group">
+              <label>Embauche le</label>
+              <input type="date" className="form-control" value={dmst.entreprise.embaucheLe || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["entreprise", "embaucheLe"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Antécédents héréditaires et familiaux — Ascendants / collatéraux</label>
+              <textarea className="form-control" value={dmst.antecedents.familiauxAscendantsCollateraux || ""} disabled={!canEditMedical}
+                onChange={e => setPath(["antecedents", "familiauxAscendantsCollateraux"], e.target.value)} />
+              {!canEditMedical && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>🔒 Réservé au médecin</div>}
+            </div>
+
+            <div className="form-group full">
+              <label>Antécédents héréditaires et familiaux — Conjoint / enfants</label>
+              <textarea className="form-control" value={dmst.antecedents.familiauxConjointEnfants || ""} disabled={!canEditMedical}
+                onChange={e => setPath(["antecedents", "familiauxConjointEnfants"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Antécédents personnels</label>
+              <textarea className="form-control" value={dmst.antecedents.personnels || ""} disabled={!canEditMedical}
+                onChange={e => setPath(["antecedents", "personnels"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Formation scolaire et professionnelle</label>
+              <textarea className="form-control" value={dmst.parcours.formationScolairePro || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["parcours", "formationScolairePro"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Activités professionnelles antérieures</label>
+              <textarea className="form-control" value={dmst.parcours.activitesProAnterieures || ""} disabled={!canEditAdmin}
+                onChange={e => setPath(["parcours", "activitesProAnterieures"], e.target.value)} />
+            </div>
+
+            <div className="form-group full">
+              <label>Emploi obligatoire</label>
+              <div style={{ display: "flex", gap: 16, flexWrap: "wrap" }}>
+                <Switch
+                  checked={dmst.parcours.emploiObligatoire.victimeGuerre}
+                  onChange={(v) => canEditAdmin && setPath(["parcours", "emploiObligatoire", "victimeGuerre"], v)}
+                  label="Victime de guerre"
+                />
+                <Switch
+                  checked={dmst.parcours.emploiObligatoire.accidenteTravail}
+                  onChange={(v) => canEditAdmin && setPath(["parcours", "emploiObligatoire", "accidenteTravail"], v)}
+                  label="Accidenté du travail"
+                />
+                <Switch
+                  checked={dmst.parcours.emploiObligatoire.travailleurHandicape}
+                  onChange={(v) => canEditAdmin && setPath(["parcours", "emploiObligatoire", "travailleurHandicape"], v)}
+                  label="Travailleur handicapé"
+                />
+              </div>
+            </div>
+
+            <div className="form-group full">
+              <label>Vaccinations (type / date / commentaire)</label>
+              <div style={{ display: "grid", gap: 10 }}>
+                {dmst.immunoBio.vaccinations.map((row, idx) => (
+                  <div key={idx} style={{ display: "grid", gridTemplateColumns: "220px 160px 1fr", gap: 10 }}>
+                    <input className="form-control" value={row.type} disabled={!canEditAdmin}
+                      onChange={e => {
+                        const next = structuredClone(dmst);
+                        next.immunoBio.vaccinations[idx].type = e.target.value;
+                        setDMST(next);
+                      }} />
+                    <input type="date" className="form-control" value={row.date || ""} disabled={!canEditAdmin}
+                      onChange={e => {
+                        const next = structuredClone(dmst);
+                        next.immunoBio.vaccinations[idx].date = e.target.value;
+                        setDMST(next);
+                      }} />
+                    <input className="form-control" value={row.commentaire || ""} disabled={!canEditAdmin}
+                      onChange={e => {
+                        const next = structuredClone(dmst);
+                        next.immunoBio.vaccinations[idx].commentaire = e.target.value;
+                        setDMST(next);
+                      }} />
+                  </div>
+                ))}
+                {canEditAdmin && (
+                  <button className="btn btn-secondary btn-sm" onClick={() => {
+                    const next = structuredClone(dmst);
+                    next.immunoBio.vaccinations.push({ type: "", date: "", commentaire: "" });
+                    setDMST(next);
+                  }}>+ Ajouter</button>
+                )}
+              </div>
+            </div>
+
+            <div className="form-group full">
+              <label>Groupe sanguin</label>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 160px 1fr", gap: 10 }}>
+                <input className="form-control" placeholder="Laboratoire" value={dmst.immunoBio.groupeSanguin.laboratoire || ""} disabled={!canEditMedical}
+                  onChange={e => setPath(["immunoBio","groupeSanguin","laboratoire"], e.target.value)} />
+                <input type="date" className="form-control" value={dmst.immunoBio.groupeSanguin.date || ""} disabled={!canEditMedical}
+                  onChange={e => setPath(["immunoBio","groupeSanguin","date"], e.target.value)} />
+                <input className="form-control" placeholder="Résultat" value={dmst.immunoBio.groupeSanguin.resultat || ""} disabled={!canEditMedical}
+                  onChange={e => setPath(["immunoBio","groupeSanguin","resultat"], e.target.value)} />
+              </div>
+              {!canEditMedical && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>🔒 Réservé au médecin</div>}
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function ExamPage({ title, exam, onUpdate, user, showToast }) {
+  const canEditMedical = user.role === "medecin";
+  const canEditNursing = user.role === "infirmiere" || user.role === "medecin"; // constantes, tests, etc.
+
+  const [form, setForm] = useState(exam || buildExam());
+  useEffect(() => { setForm(exam || buildExam()); }, [exam]);
+
+  const setPath = (path, value) => {
+    const next = structuredClone(form);
+    let cur = next;
+    for (let i = 0; i < path.length - 1; i++) cur = cur[path[i]];
+    cur[path[path.length - 1]] = value;
+    setForm(next);
+  };
+
+  const save = () => {
+    onUpdate(form);
+    showToast("Examen sauvegardé", "success");
+  };
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <h3>{title}</h3>
+        <button className="btn btn-secondary" onClick={save}>💾 Sauvegarder</button>
+      </div>
+      <div className="card-body">
+        <div className="form-grid">
+          <div className="form-group"><label>Date</label>
+            <input type="date" className="form-control" value={form.meta.date || ""} onChange={e => setPath(["meta","date"], e.target.value)} />
+          </div>
+          <div className="form-group"><label>Docteur</label>
+            <input className="form-control" value={form.meta.docteur || ""} onChange={e => setPath(["meta","docteur"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Poste — Intitulé</label>
+            <input className="form-control" value={form.poste.intitule || ""} onChange={e => setPath(["poste","intitule"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Poste — Caractéristiques / risques</label>
+            <textarea className="form-control" value={form.poste.caracteristiques || ""} onChange={e => setPath(["poste","caracteristiques"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Risques (liste)</label>
+            <div className="checkbox-group">
+              {RISQUES.map(r => (
+                <span key={r}
+                  className={`checkbox-chip ${form.poste.risques.includes(r) ? "selected" : ""}`}
+                  onClick={() => {
+                    const next = structuredClone(form);
+                    next.poste.risques = next.poste.risques.includes(r)
+                      ? next.poste.risques.filter(x => x !== r)
+                      : [...next.poste.risques, r];
+                    setForm(next);
+                  }}
+                >{r}</span>
+              ))}
+            </div>
+          </div>
+
+          <div className="form-group full"><label>Facteurs extra-professionnels</label>
+            <textarea className="form-control" value={form.facteursExtraPro || ""} onChange={e => setPath(["facteursExtraPro"], e.target.value)} />
+          </div>
+
+          <div className="form-group"><label>Poids (kg)</label>
+            <input className="form-control" value={form.constantes.poidsKg || ""} disabled={!canEditNursing}
+              onChange={e => setPath(["constantes","poidsKg"], e.target.value)} />
+          </div>
+          <div className="form-group"><label>Taille (cm)</label>
+            <input className="form-control" value={form.constantes.tailleCm || ""} disabled={!canEditNursing}
+              onChange={e => setPath(["constantes","tailleCm"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Auditif</label>
+            <div style={{ display: "grid", gridTemplateColumns: "160px 1fr 1fr", gap: 10 }}>
+              <label style={{ display:"flex", gap: 8, alignItems:"center" }}>
+                <input type="checkbox" checked={!!form.auditif.prothese} disabled={!canEditNursing}
+                  onChange={e => setPath(["auditif","prothese"], e.target.checked)} />
+                Prothèse
+              </label>
+              <input className="form-control" placeholder="Audition OD" value={form.auditif.auditionOD || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["auditif","auditionOD"], e.target.value)} />
+              <input className="form-control" placeholder="Audition OG" value={form.auditif.auditionOG || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["auditif","auditionOG"], e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-group full"><label>Oculaire</label>
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+              <input className="form-control" placeholder="Couleurs" value={form.oculaire.couleurs || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["oculaire","couleurs"], e.target.value)} />
+              <label style={{ display:"flex", gap:8, alignItems:"center" }}>
+                <input type="checkbox" checked={form.oculaire.correction.avec} disabled={!canEditNursing}
+                  onChange={e => setPath(["oculaire","correction","avec"], e.target.checked)} />
+                Avec correction
+              </label>
+              <input className="form-control" placeholder="Vision près OD" value={form.oculaire.visionPresOD || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["oculaire","visionPresOD"], e.target.value)} />
+              <input className="form-control" placeholder="Vision près OG" value={form.oculaire.visionPresOG || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["oculaire","visionPresOG"], e.target.value)} />
+              <input className="form-control" placeholder="Vision loin OD" value={form.oculaire.visionLoinOD || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["oculaire","visionLoinOD"], e.target.value)} />
+              <input className="form-control" placeholder="Vision loin OG" value={form.oculaire.visionLoinOG || ""} disabled={!canEditNursing}
+                onChange={e => setPath(["oculaire","visionLoinOG"], e.target.value)} />
+            </div>
+          </div>
+
+          <div className="form-group full"><label>Constatations cliniques</label>
+            <textarea className="form-control" value={form.clinique.autres || ""} disabled={!canEditMedical}
+              onChange={e => setPath(["clinique","autres"], e.target.value)} placeholder="Synthèse ou autres constatations..." />
+            {!canEditMedical && <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 6 }}>🔒 Réservé au médecin</div>}
+          </div>
+
+          <div className="form-group full"><label>Examens complémentaires</label>
+            <textarea className="form-control" value={form.examensComplementaires || ""} disabled={!canEditMedical}
+              onChange={e => setPath(["examensComplementaires"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Conclusion médicale 🔒</label>
+            <textarea className="form-control" value={form.conclusions.medicale || ""} disabled={!canEditMedical}
+              onChange={e => setPath(["conclusions","medicale"], e.target.value)} />
+          </div>
+
+          <div className="form-group full"><label>Conclusion professionnelle (à transmettre à l’employeur)</label>
+            <textarea className="form-control" value={form.conclusions.professionnelleEmployeur || ""} disabled={!canEditMedical}
+              onChange={e => setPath(["conclusions","professionnelleEmployeur"], e.target.value)} />
+          </div>
+
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function FollowupsPage({ exams, onChange, user, showToast }) {
+  const canEdit = user.role === "medecin";
+  const add = () => {
+    const next = [...exams, buildExam()];
+    onChange(next);
+    showToast("Examen ajouté", "success");
+  };
+  const updateAt = (idx, newExam) => {
+    const next = exams.map((e, i) => i === idx ? newExam : e);
+    onChange(next);
+  };
+  const removeAt = (idx) => {
+    if (!confirm("Supprimer cet examen ?")) return;
+    onChange(exams.filter((_, i) => i !== idx));
+    showToast("Examen supprimé", "success");
+  };
+
+  return (
+    <div style={{ display: "grid", gap: 16 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}>
+        {canEdit && <button className="btn btn-primary" onClick={add}>+ Ajouter un examen</button>}
+      </div>
+
+      {exams.length === 0 ? (
+        <div className="card"><div className="card-body">
+          <div className="empty-state"><div className="empty-state-icon">🩺</div><p>Aucun examen ultérieur</p></div>
+        </div></div>
+      ) : (
+        exams.map((ex, idx) => (
+          <div className="card" key={idx}>
+            <div className="card-header">
+              <h3>Examen #{idx + 1} {ex.meta?.date ? `— ${new Date(ex.meta.date).toLocaleDateString("fr-FR")}` : ""}</h3>
+              <div style={{ display: "flex", gap: 8 }}>
+                {canEdit && <button className="btn btn-danger btn-sm" onClick={() => removeAt(idx)}>Supprimer</button>}
+              </div>
+            </div>
+            <div className="card-body">
+              <ExamPage
+                title={null}
+                exam={ex}
+                onUpdate={(newExam) => updateAt(idx, newExam)}
+                user={user}
+                showToast={showToast}
+              />
+            </div>
+          </div>
+        ))
+      )}
+    </div>
+  );
+}
+
+
 // ============================================================
 // Global Search Component
 // ============================================================
@@ -743,6 +1236,7 @@ function EmployeesPage({ employees, visits, setEmployees, user, showToast }) {
   const [selected, setSelected] = useState(null);
   const [filterService, setFilterService] = useState("");
   const [filterAptitude, setFilterAptitude] = useState("");
+  const [tab, setTab] = useState("profil");
   const fileInputRef = useRef(null);
 
   const filtered = useMemo(() => employees.filter(e => {
@@ -752,7 +1246,7 @@ function EmployeesPage({ employees, visits, setEmployees, user, showToast }) {
       && (!filterAptitude || e.aptitude === filterAptitude);
   }), [employees, search, filterService, filterAptitude]);
 
-  const blank = { nom: "", prenom: "", matricule: "", dateNaissance: "", poste: "", service: "Production", dateEmbauche: "", risques: [], aptitude: "en_attente", derniereVisite: "", prochaineVisite: "", vaccinations: [], notes: "" };
+  const blank = { nom: "", prenom: "", matricule: "", dateNaissance: "", poste: "", service: "Production", dateEmbauche: "", risques: [], aptitude: "en_attente", derniereVisite: "", prochaineVisite: "", vaccinations: [], notes: "", dmst: buildDMST(), };
 
   const handleSave = (emp) => {
     if (editing) setEmployees(employees.map(e => e.id === editing.id ? { ...emp, id: editing.id } : e));
@@ -798,42 +1292,145 @@ function EmployeesPage({ employees, visits, setEmployees, user, showToast }) {
     return (
       <div>
         <button className="btn btn-secondary" onClick={() => setSelected(null)} style={{ marginBottom: 20 }}>← Retour à la liste</button>
-        <div className="detail-panel">
-          <div>
-            <div className="card">
-              <div className="card-body" style={{ textAlign: "center" }}>
-                <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 600, color: "var(--primary)", margin: "0 auto 12px" }}>{emp.prenom[0]}{emp.nom[0]}</div>
-                <h3 style={{ fontSize: 18 }}>{emp.prenom} {emp.nom}</h3>
-                <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{emp.poste}</p>
-                <div style={{ marginTop: 10 }}><Badge status={emp.aptitude} /></div>
-              </div>
-              <div className="card-body" style={{ borderTop: "1px solid var(--border-light)", paddingTop: 16 }}>
-                {[["Matricule", emp.matricule], ["Service", emp.service], ["Naissance", emp.dateNaissance ? new Date(emp.dateNaissance).toLocaleDateString("fr-FR") : "—"], ["Embauche", emp.dateEmbauche ? new Date(emp.dateEmbauche).toLocaleDateString("fr-FR") : "—"], ["Prochaine visite", emp.prochaineVisite ? new Date(emp.prochaineVisite).toLocaleDateString("fr-FR") : "—"]].map(([l, v]) => (
-                  <div key={l} className="detail-field"><div className="detail-field-label">{l}</div><div className="detail-field-value">{v}</div></div>
-                ))}
-              </div>
-            </div>
-          </div>
-          <div>
-            <div className="card" style={{ marginBottom: 20 }}>
-              <div className="card-header"><h3>Risques professionnels</h3></div>
-              <div className="card-body">{emp.risques.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucun risque identifié</p> : emp.risques.map(r => <span key={r} className="risk-tag">{r}</span>)}</div>
-            </div>
-            <div className="card" style={{ marginBottom: 20 }}>
-              <div className="card-header"><h3>Vaccinations</h3></div>
-              <div className="card-body">{emp.vaccinations.length === 0 ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucune vaccination</p> : emp.vaccinations.map((v, i) => <span key={i} className="vacc-tag">{v}</span>)}</div>
-            </div>
-            {emp.notes && <div className="card" style={{ marginBottom: 20 }}><div className="card-header"><h3>Notes</h3></div><div className="card-body"><p style={{ fontSize: 14 }}>{emp.notes}</p></div></div>}
-            <div className="card">
-              <div className="card-header"><h3>Historique des visites</h3></div>
-              {empVisits.length === 0 ? <div className="card-body"><p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucune visite</p></div> : (
-                <div className="table-wrapper"><table><thead><tr><th>Date</th><th>Type</th><th>Statut</th><th>Conclusion</th></tr></thead><tbody>
-                  {empVisits.map(v => <tr key={v.id}><td>{new Date(v.date).toLocaleDateString("fr-FR")}</td><td><Badge status={v.type} type="visit" /></td><td><Badge status={v.statut} type="statut" /></td><td style={{ whiteSpace: "normal", maxWidth: 300 }}>{v.conclusion || "—"}</td></tr>)}
-                </tbody></table></div>
-              )}
-            </div>
-          </div>
+        <div className="tabs" style={{ marginBottom: 16 }}>
+          <button className={`tab ${tab === "profil" ? "active" : ""}`} onClick={() => setTab("profil")}>Profil</button>
+          <button className={`tab ${tab === "dmst" ? "active" : ""}`} onClick={() => setTab("dmst")}>Dossier médical</button>
+          <button className={`tab ${tab === "first" ? "active" : ""}`} onClick={() => setTab("first")}>1er examen</button>
+          <button className={`tab ${tab === "followups" ? "active" : ""}`} onClick={() => setTab("followups")}>Examens ultérieurs</button>
         </div>
+        {tab === "profil" && (
+  <div className="detail-panel">
+    {/* === TON UI PROFIL EXISTANTE (inchangée) === */}
+    <div>
+      <div className="card">
+        <div className="card-body" style={{ textAlign: "center" }}>
+          <div style={{ width: 72, height: 72, borderRadius: "50%", background: "var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 28, fontWeight: 600, color: "var(--primary)", margin: "0 auto 12px" }}>
+            {emp.prenom[0]}{emp.nom[0]}
+          </div>
+          <h3 style={{ fontSize: 18 }}>{emp.prenom} {emp.nom}</h3>
+          <p style={{ fontSize: 13, color: "var(--text-secondary)" }}>{emp.poste}</p>
+          <div style={{ marginTop: 10 }}><Badge status={emp.aptitude} /></div>
+        </div>
+
+        <div className="card-body" style={{ borderTop: "1px solid var(--border-light)", paddingTop: 16 }}>
+          {[
+            ["Matricule", emp.matricule],
+            ["Service", emp.service],
+            ["Naissance", emp.dateNaissance ? new Date(emp.dateNaissance).toLocaleDateString("fr-FR") : "—"],
+            ["Embauche", emp.dateEmbauche ? new Date(emp.dateEmbauche).toLocaleDateString("fr-FR") : "—"],
+            ["Prochaine visite", emp.prochaineVisite ? new Date(emp.prochaineVisite).toLocaleDateString("fr-FR") : "—"],
+          ].map(([l, v]) => (
+            <div key={l} className="detail-field">
+              <div className="detail-field-label">{l}</div>
+              <div className="detail-field-value">{v}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header"><h3>Risques professionnels</h3></div>
+        <div className="card-body">
+          {emp.risques.length === 0
+            ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucun risque identifié</p>
+            : emp.risques.map(r => <span key={r} className="risk-tag">{r}</span>)
+          }
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 20 }}>
+        <div className="card-header"><h3>Vaccinations</h3></div>
+        <div className="card-body">
+          {emp.vaccinations.length === 0
+            ? <p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucune vaccination</p>
+            : emp.vaccinations.map((v, i) => <span key={i} className="vacc-tag">{v}</span>)
+          }
+        </div>
+      </div>
+
+      {emp.notes && (
+        <div className="card" style={{ marginBottom: 20 }}>
+          <div className="card-header"><h3>Notes</h3></div>
+          <div className="card-body"><p style={{ fontSize: 14 }}>{emp.notes}</p></div>
+        </div>
+      )}
+
+      <div className="card">
+        <div className="card-header"><h3>Historique des visites</h3></div>
+        {empVisits.length === 0 ? (
+          <div className="card-body"><p style={{ color: "var(--text-muted)", fontSize: 13 }}>Aucune visite</p></div>
+        ) : (
+          <div className="table-wrapper">
+            <table>
+              <thead><tr><th>Date</th><th>Type</th><th>Statut</th><th>Conclusion</th></tr></thead>
+              <tbody>
+                {empVisits.map(v => (
+                  <tr key={v.id}>
+                    <td>{new Date(v.date).toLocaleDateString("fr-FR")}</td>
+                    <td><Badge status={v.type} type="visit" /></td>
+                    <td><Badge status={v.statut} type="statut" /></td>
+                    <td style={{ whiteSpace: "normal", maxWidth: 300 }}>{v.conclusion || "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    </div>
+  </div>
+)}
+
+{tab === "dmst" && (
+  <DMSTPage
+    emp={emp}
+    onUpdate={(patch) =>
+      setEmployees(prev =>
+        prev.map(e => e.id === emp.id ? ({ ...e, ...patch }) : e)
+      )
+    }
+    user={user}
+    showToast={showToast}
+  />
+)}
+
+{tab === "first" && (
+  <ExamPage
+    title="1er examen médical"
+    exam={emp.dmst?.premierExamen}
+    onUpdate={(newExam) =>
+      setEmployees(prev =>
+        prev.map(e => {
+          if (e.id !== emp.id) return e;
+          const base = e.dmst ?? buildDMST(); // ✅ évite spread undefined
+          return { ...e, dmst: { ...base, premierExamen: newExam } };
+        })
+      )
+    }
+    user={user}
+    showToast={showToast}
+  />
+)}
+
+{tab === "followups" && (
+  <FollowupsPage
+    exams={emp.dmst?.examensUlterieurs || []}
+    onChange={(newList) =>
+      setEmployees(prev =>
+        prev.map(e => {
+          if (e.id !== emp.id) return e;
+          const base = e.dmst ?? buildDMST(); // ✅ évite spread undefined
+          return { ...e, dmst: { ...base, examensUlterieurs: newList } };
+        })
+      )
+    }
+    user={user}
+    showToast={showToast}
+  />
+)}
+
       </div>
     );
   }
@@ -853,7 +1450,7 @@ function EmployeesPage({ employees, visits, setEmployees, user, showToast }) {
       <div className="card">
         <div className="table-wrapper"><table><thead><tr><th>Salarié</th><th>Matricule</th><th>Poste</th><th>Service</th><th>Aptitude</th><th>Prochaine visite</th><th></th></tr></thead><tbody>
           {filtered.map(e => (
-            <tr key={e.id} style={{ cursor: "pointer" }} onClick={() => setSelected(e.id)}>
+            <tr key={e.id} style={{ cursor: "pointer" }} onClick={() => { setSelected(e.id); setTab("profil"); }}>
               <td style={{ fontWeight: 500 }}>{e.prenom} {e.nom}</td><td style={{ color: "var(--text-secondary)" }}>{e.matricule}</td><td>{e.poste}</td><td>{e.service}</td><td><Badge status={e.aptitude} /></td><td>{e.prochaineVisite ? new Date(e.prochaineVisite).toLocaleDateString("fr-FR") : "—"}</td>
               <td>{user.role !== "infirmiere" && <button className="btn btn-sm btn-secondary" onClick={ev => { ev.stopPropagation(); setEditing(e); setShowForm(true); }}>✎</button>}</td>
             </tr>
