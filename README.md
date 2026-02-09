@@ -127,7 +127,7 @@ Les données sont sauvegardées automatiquement via l'API `window.storage` (pers
 | `ms2-accidents` | Registre AT / MP |
 | `ms2-campaigns` | Campagnes de prévention |
 
-> **Note** : En environnement local (hors Claude.ai), les données sont stockées en mémoire et réinitialisées à chaque rechargement. Pour une persistance locale, remplacez `window.storage` par `localStorage` dans le code.
+> **Note** : En environnement local, les données sont stockées en mémoire et réinitialisées à chaque rechargement. Pour une persistance locale, remplacez `window.storage` par `localStorage` dans le code.
 
 ---
 
